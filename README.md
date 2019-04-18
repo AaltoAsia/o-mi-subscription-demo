@@ -9,17 +9,25 @@ A single web page dashboard-like demo with O-MI subscription. Subscribes to all 
    
    For example, choose one of these:
 
-   * Python 
+   * Python3 
       ```
-      python -m SimpleHTTPServer 8080
+      python -m http.server 8000
+      ```
+
+   * Python2 
+      ```
+      python -m SimpleHTTPServer 8000
       ```
 
    * Node 
       ```
       npm install http-server -g
-      http-server
+      http-server -p 8000
       ```
 
-2. Go to http://localhost:8080/
+2. Go to http://localhost:8000/
 
-TODO
+3. If your O-MI Node has different url than http://localhost:8080/ : Open developer console and call `connectWebsocket("ws://url")`
+
+4. Make some write requests to the O-MI node (on http://localhost:8080/)
+

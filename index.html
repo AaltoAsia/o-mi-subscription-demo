@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <script src="./omi.js"></script>
+    <script src="//cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.5/radial/gauge.min.js"></script>
+  </head>
+  <body>
+    <button onclick="javascript: connectWebsocket('ws://localhost:8080/');">Connect to localhost:8080</button>
+    <div id="gauges" style="display:flex; flex-wrap: wrap;"></div>
+    <script>
+
+      var omi = WebOmi.omi;
+      var infoItems = {};
+
+      (function() {
+        window.gaugeContainer = document.getElementById("gauges");
+      })();
+
+
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+
+      function createVisualization(id, path, value, xmlNode) {
+        var gauge = new RadialGauge({
+              renderTo: document.createElement('canvas'),
+              width: 200,
+              height: 200,
+              title: path,
+              value: 0,
+              animatedValue: true,
+              animationRule: 'bounce',
+              animationDuration: 500,
+              minorTicks: 1,
+        });
+
+        gaugeContainer.appendChild(gauge.options.renderTo);
+        gauge.draw();
+        gauge.value = value; // animate from 0
+
+        return {
+          gauge: gauge,
+          id: id,
+          path: path,
+          xmlNode: xmlNode,
+          value: value,
+          updateVisualization: (
+            (value, xmlNode) => {
+              gauge.value = value;
+              //gauge.draw();
+            }
+          ),
+        };
+      }
+
+
+      function parseObject(doc, parentPath) {
+        var children = omi.getObjectChildren(doc);
+
+        children.forEach(child => {
+
+          var id = omi.getOdfId(child);
+          var path = parentPath + "/" + escapeHtml(id);
+
+          if (child.nodeName == "InfoItem") {
+            var value = omi.evaluateXPath(child, "./odf:value")[0].textContent;
+
+            if (infoItems.hasOwnProperty(path)) {
+              infoItems[path].updateVisualization(value, child);
+            } else {
+              infoItems[path] = createVisualization(id, path, value, child);
+            }
+          } else if (child.nodeName == "Object") {
+            parseObject(child, path);
+          }
+        });
+      }
+
+
+      function parseMessage(message) {
+
+        var response = message.data;
+        if (response.length == 0) {return;}
+
+        var doc = omi.parseXml(response);
+        var objects = omi.evaluateXPath(doc, '//odf:Objects')[0];
+        if (objects != null) {
+          parseObject(objects, "");
+        } else {
+          console.log(doc);
+        }
+
+      }
+
+
+      // subscribe to everything (root <Objects>), notifying changes (interval=-1), results to this ws connection (callback=0)
+      function subscribe() {
+        socket.send(
+          `<omiEnvelope xmlns="http://www.opengroup.org/xsd/omi/1.0/" version="1.0" ttl="0">
+            <read msgformat="odf" callback="0" interval="-1">
+              <msg>
+                <Objects xmlns="http://www.opengroup.org/xsd/odf/1.0/"/>
+              </msg>
+            </read>
+          </omiEnvelope>`);
+      }
+
+
+      function connectWebsocket(url) {
+        window.socket = new WebSocket(url);
+        socket.onopen = subscribe;
+        socket.onclose = () => connectWebsocket(url);
+        socket.onmessage = parseMessage;
+        socket.onerror = console.log;
+
+        if (typeof keepAliveScheduler !== "undefined") {clearInterval(keepAliveScheduler);}
+        window.keepAliveScheduler = setInterval(() => socket.send(""), 30000);
+      }
+
+    </script>
+  </body>
+</html>
