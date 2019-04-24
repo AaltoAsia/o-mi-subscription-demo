@@ -3,10 +3,22 @@
   <head>
     <meta charset="utf-8">
     <script src="./omi.js"></script>
-    <script src="//cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.5/radial/gauge.min.js"></script>
+    <script src="//cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.5/all/gauge.min.js"></script>
+    <style>
+    #gauges > div {
+        border: solid 1px;
+        border-radius: 0.6em;
+        margin: 0.3em;
+        text-align: center;
+        overflow: hidden;
+        max-width: 200px;
+        padding-top: 0.3em;
+    }
+    </style>
   </head>
   <body>
     <button onclick="javascript: connectWebsocket('ws://localhost:8080/');">Connect to localhost:8080</button>
+    <button onclick="javascript: readAll();">Read All</button>
     <div id="gauges" style="display:flex; flex-wrap: wrap;"></div>
     <script>
 
@@ -28,36 +40,102 @@
       }
 
 
+      // Extra spice
+      function getMetaData(item) {
+        var httpRequest = new XMLHttpRequest();
+        httpRequest.onreadystatechange = () => {
+
+          if (httpRequest.readyState === XMLHttpRequest.DONE && httpRequest.status === 200) {
+
+            xmlNode = omi.parseXml(httpRequest.responseText);
+
+            console.log(httpRequest.responseText);
+            var metadata = omi.evaluateXPath(xmlNode, './odf:MetaData/odf:InfoItem[@name="CanvasGaugeOptions"]/odf:value')
+            console.log(metadata);
+            if (metadata.length > 0) {
+              item.gauge.update(JSON.parse(metadata[0].textContent));
+            }
+          }
+        };
+
+        httpRequest.open('GET', omiUrl.replace(/^ws/, "http") + 'Objects' + item.path + '/MetaData/');
+        httpRequest.send();
+
+      }
+
+
       function createVisualization(id, path, value, xmlNode) {
-        var gauge = new RadialGauge({
+        var options = {
               renderTo: document.createElement('canvas'),
               width: 200,
               height: 200,
-              title: path,
+              title: id,
+              fontTitleSize: 28,
+              colorTitle: 'black',
+              colorValueText: 'black',
               value: 0,
               animatedValue: true,
               animationRule: 'bounce',
-              animationDuration: 500,
-              minorTicks: 1,
-        });
+              animationDuration: 1500,
+              valueDec: 1,
+              fontValueSize: 30,
+              colorNeedle: 'rgba(240,98,98,1)',
+              colorNeedleEnd: 'rgba(255,160,102,.9)',
+              minValue: 0,
+              maxValue: 50,
+              highlights: [
+                { from: 10, to: 30, color: '#eee'  },
+                { from: 30, to: 40, color: '#ccc'  },
+                { from: 40, to: 50, color: '#999'  },
+              ],
+              majorTicks: [0, 10, 20, 30, 40, 50],
+        };
+        
+        var gauge = new RadialGauge(options);
 
-        gaugeContainer.appendChild(gauge.options.renderTo);
+        var div = document.createElement("div");
+        var div2 = document.createElement("div");
+        var pathSegments = path.split('/');
+        var t = document.createTextNode(pathSegments.slice(0,pathSegments.length-1).join('/'));
+        div2.appendChild(t);
+        div.appendChild(div2);
+        div.appendChild(gauge.options.renderTo);
+        gaugeContainer.appendChild(div);
         gauge.draw();
-        gauge.value = value; // animate from 0
 
-        return {
-          gauge: gauge,
-          id: id,
-          path: path,
-          xmlNode: xmlNode,
-          value: value,
+        var returnObject = {
+          gauge,
+          id,
+          path,
+          xmlNode,
+          value,
           updateVisualization: (
             (value, xmlNode) => {
+
+              if (value > gauge.options.maxValue) { // Change gauge max settings
+
+                maxv = Math.ceil(value/100)*100;
+                ratio = maxv / gauge.options.maxValue;
+
+                gauge.update({
+                  maxValue: maxv,
+                  majorTicks: gauge.options.majorTicks.map(x => x*ratio),
+                  highlights: gauge.options.highlights.map(x => ({...x, from: x.from*ratio, to: x.to*ratio})),
+                });
+
+                gauge.draw();
+              }
+              getMetaData(returnObject); // update canvas options with ones found from metadata
+
               gauge.value = value;
-              //gauge.draw();
             }
           ),
         };
+
+        returnObject.updateVisualization(value, xmlNode);
+
+
+        return returnObject;
       }
 
 
@@ -111,9 +189,20 @@
             </read>
           </omiEnvelope>`);
       }
+      function readAll() {
+        socket.send(
+          `<omiEnvelope xmlns="http://www.opengroup.org/xsd/omi/1.0/" version="1.0" ttl="0">
+            <read msgformat="odf">
+              <msg>
+                <Objects xmlns="http://www.opengroup.org/xsd/odf/1.0/"/>
+              </msg>
+            </read>
+          </omiEnvelope>`);
+      }
 
 
       function connectWebsocket(url) {
+        window.omiUrl = url;
         window.socket = new WebSocket(url);
         socket.onopen = subscribe;
         socket.onclose = () => connectWebsocket(url);
