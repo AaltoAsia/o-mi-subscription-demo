@@ -7,7 +7,7 @@ A single web page dashboard-like demo with O-MI subscription. Subscribes to all 
 
 1. Just serve the html file with your preferred method:
    
-   For example, choose one of these:
+   For example, **choose one** of these:
 
    * Python3 
       ```
